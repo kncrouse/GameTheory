@@ -1,0 +1,1574 @@
+<?xml version="1.0" encoding="utf-8"?>
+<model version="NetLogo 7.0.3" snapToGrid="true">
+  <code><![CDATA[
+  
+;; =============================================================================
+;; GAME THEORY MODEL — WORKING TITLE
+;; Edit ONLY between code brackets when using VS Code.
+;; After external edits: close and reopen the model in NetLogo to compile.
+;; =============================================================================
+
+extensions [ csv ] 
+
+globals [
+  
+  code-location
+  
+] 
+
+turtles-own [
+  
+  color.allele.i
+  color.allele.ii
+  biological.sex
+  energy.supply 
+  
+  playing? 
+  energy
+  
+  generation
+  
+]
+
+patches-own [
+  
+  penergy
+]
+
+;------------------------------------------------------------------------------------
+;:::::: Setup :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+;------------------------------------------------------------------------------------
+
+to setup
+  clear-all
+  ask patches [ set pcolor green ]
+  setup-parameters
+  setup-turtles
+  reset-ticks
+end
+
+to setup-parameters
+
+end
+
+to setup-turtles
+  
+end
+
+to add-population
+  
+  create-turtles individuals-to-add [
+    initialize-turtle ]
+  
+end
+
+to initialize-turtle
+  
+  move-to one-of patches
+  set color read-from-string color-of-individuals
+  set color.allele.i ""
+  set color.allele.ii ""
+  set biological.sex sex-of-individuals
+  set size size-of-individuals
+  set energy.supply 0 
+  set hidden? false
+  set heading (random 360)
+  set energy random 10
+  update-phenotype
+  set generation 0
+  
+end
+
+to update-phenotype
+  
+  if biological.sex = "asexual" [ set shape "club" ]
+  if biological.sex = "male" [ set shape "spade" ]
+  if biological.sex = "female" [ set shape "heart" ]
+  
+end
+
+;------------------------------------------------------------------------------------
+;:::::: Go ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+;------------------------------------------------------------------------------------
+
+to go
+  
+  ask turtles [ set playing? false ]
+
+  ask turtles [ move ]
+  ask turtles [ interact ]
+  ask turtles [ reproduce ]
+  ask turtles [ update-turtles ]
+
+  tick
+end
+
+;------------------------------------------------------------------------------------
+;:::::: TURTLES :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+;------------------------------------------------------------------------------------
+
+to move
+  rt random 180
+  lt random 180
+  fd 2 
+end
+
+
+to reproduce
+  ;; Asexual case only (shape = "club")
+  if shape != "club" [ stop ]
+
+  ;; -------------------------------------------------------------------------
+  ;; Temporary phenotype lookup based on current color
+  ;; Maps NetLogo colors -> "grn" / "blu" / "red"
+  ;; -------------------------------------------------------------------------
+  let my-phenotype ""
+  if color = green [ set my-phenotype "grn" ]
+  if color = blue  [ set my-phenotype "blu" ]
+  if color = red   [ set my-phenotype "red" ]
+
+  if my-phenotype = "" [ stop ]
+
+  ;; -------------------------------------------------------------------------
+  ;; Reproduction cost depends on context:
+  ;; 1) same'same: solo asexual reproduction; requires sufficient energy to pay abs(cost)
+  ;; 2) color1'color2: requires an encounter with an opponent present (same patch)
+  ;; Notes:
+  ;; - The individual pays the value in the box (can be negative/positive; we treat
+  ;;   "ability to pay" as energy >= abs(cost) for costs that may be negative).
+  ;; - This procedure handles only the focal individual's payment + offspring creation.
+  ;; -------------------------------------------------------------------------
+  ;let mate one-of other turtles-here
+  ;let context-phenotype my-phenotype
+  let reproduction-cost 0
+  let can-reproduce? false
+  
+  ;; same'same context
+  if my-phenotype = "grn" [ set reproduction-cost grn'grn ]
+  if my-phenotype = "blu" [ set reproduction-cost blu'blu ]
+  if my-phenotype = "red" [ set reproduction-cost red'red ]
+  
+  if energy >= ( 2 * (abs reproduction-cost)) [ set can-reproduce? true ]
+
+;   ifelse mate = nobody [
+
+;   ] [
+;     ;; color1'color2 context: requires encounter
+;     let mate-phenotype ""
+;     if [color] of mate = green [ set mate-phenotype "grn" ]
+;     if [color] of mate = blue  [ set mate-phenotype "blu" ]
+;     if [color] of mate = red   [ set mate-phenotype "red" ]
+
+;     if mate-phenotype = "" [ stop ]
+
+;     if my-phenotype = "grn" [
+;       if mate-phenotype = "grn" [ set reproduction-cost grn'grn ]
+;       if mate-phenotype = "blu" [ set reproduction-cost grn'blu ]
+;       if mate-phenotype = "red" [ set reproduction-cost grn'red ]
+;     ]
+;     if my-phenotype = "blu" [
+;       if mate-phenotype = "grn" [ set reproduction-cost blu'grn ]
+;       if mate-phenotype = "blu" [ set reproduction-cost blu'blu ]
+;       if mate-phenotype = "red" [ set reproduction-cost blu'red ]
+;     ]
+;     if my-phenotype = "red" [
+;       if mate-phenotype = "grn" [ set reproduction-cost red'grn ]
+;       if mate-phenotype = "blu" [ set reproduction-cost red'blu ]
+;       if mate-phenotype = "red" [ set reproduction-cost red'red ]
+;     ]
+
+;     if energy >= abs reproduction-cost [ set can-reproduce? true ]
+;   ]
+
+;   if not can-reproduce? [ stop ]
+
+;   ;; -------------------------------------------------------------------------
+;   ;; Execute reproduction: pay the box value, hatch one offspring
+;   ;; (offspring initialization kept identical to your current version)
+;   ;; -------------------------------------------------------------------------
+;   hatch 1 [
+;     set energy ( abs reproduction-cost ) / 2
+;     set playing? false
+;     move-to one-of patches
+;   ]
+  
+  
+  if can-reproduce? [ create-and-parent ]
+
+
+  set energy energy - ( abs reproduction-cost )
+end
+
+
+
+to interact
+  ;; Only initiate play if you haven't played this tick
+  if playing? [ stop ]
+
+  ;; Try to find a turtle opponent first
+  let opponent one-of other turtles-here with [ not playing? ]
+
+  ;; If no turtle opponent, allow a "green patch opponent" context
+  let patch-opponent? false
+  if opponent = nobody [
+    if [pcolor] of patch-here = green [
+      set patch-opponent? true
+    ]
+  ]
+
+  ;; If neither turtle nor green patch context is available, no interaction
+  if opponent = nobody and not patch-opponent? [ stop ]
+
+  ;; mark self as having played this tick
+  set playing? true
+
+  ;; if interacting with a turtle, mark them too
+  if opponent != nobody [
+    ask opponent [ set playing? true ]
+  ]
+
+  ;; -------------------------------------------------------------------------
+  ;; Temporary phenotype lookup based on current color / patch color
+  ;; Labels: "grn" / "blu" / "red"
+  ;; -------------------------------------------------------------------------
+  let my-phenotype ""
+  if color = green [ set my-phenotype "grn" ]
+  if color = blue  [ set my-phenotype "blu" ]
+  if color = red   [ set my-phenotype "red" ]
+  if my-phenotype = "" [ stop ]
+
+  let opponent-phenotype ""
+  ifelse patch-opponent? [
+    ;; green patch stands in for "grn" opponent
+    set opponent-phenotype "grn"
+  ] [
+    ;; turtle opponent phenotype from its color
+    if [color] of opponent = green [ set opponent-phenotype "grn" ]
+    if [color] of opponent = blue  [ set opponent-phenotype "blu" ]
+    if [color] of opponent = red   [ set opponent-phenotype "red" ]
+    if opponent-phenotype = "" [ stop ]
+  ]
+
+  ;; -------------------------------------------------------------------------
+  ;; Payoffs from 3x3 matrix (row = actor, col = opponent)
+  ;; -------------------------------------------------------------------------
+  let my-payoff 0
+  let opp-payoff 0
+
+  if my-phenotype = "grn" [
+    if opponent-phenotype = "grn" [ set my-payoff grn-grn ]
+    if opponent-phenotype = "blu" [ set my-payoff grn-blu ]
+    if opponent-phenotype = "red" [ set my-payoff grn-red ]
+  ]
+  if my-phenotype = "blu" [
+    if opponent-phenotype = "grn" [ set my-payoff blu-grn ]
+    if opponent-phenotype = "blu" [ set my-payoff blu-blu ]
+    if opponent-phenotype = "red" [ set my-payoff blu-red ]
+  ]
+  if my-phenotype = "red" [
+    if opponent-phenotype = "grn" [ set my-payoff red-grn ]
+    if opponent-phenotype = "blu" [ set my-payoff red-blu ]
+    if opponent-phenotype = "red" [ set my-payoff red-red ]
+  ]
+
+  ;; only compute/apply opponent payoff if opponent is a turtle
+  if opponent != nobody [
+    if opponent-phenotype = "grn" [
+      if my-phenotype = "grn" [ set opp-payoff grn-grn ]
+      if my-phenotype = "blu" [ set opp-payoff grn-blu ]
+      if my-phenotype = "red" [ set opp-payoff grn-red ]
+    ]
+    if opponent-phenotype = "blu" [
+      if my-phenotype = "grn" [ set opp-payoff blu-grn ]
+      if my-phenotype = "blu" [ set opp-payoff blu-blu ]
+      if my-phenotype = "red" [ set opp-payoff blu-red ]
+    ]
+    if opponent-phenotype = "red" [
+      if my-phenotype = "grn" [ set opp-payoff red-grn ]
+      if my-phenotype = "blu" [ set opp-payoff red-blu ]
+      if my-phenotype = "red" [ set opp-payoff red-red ]
+    ]
+  ]
+
+  set energy energy + my-payoff
+  if opponent != nobody [
+    ask opponent [ set energy energy + opp-payoff ]
+  ]
+end
+
+
+to create-and-parent
+  ;; Asexual case only (shape = "club")
+  if shape != "club" [ stop ]
+
+  ;; -------------------------------------------------------------------------
+  ;; Temporary phenotype lookup based on current color
+  ;; Maps NetLogo colors -> "grn" / "blu" / "red"
+  ;; -------------------------------------------------------------------------
+  let my-phenotype ""
+  if color = green [ set my-phenotype "grn" ]
+  if color = blue  [ set my-phenotype "blu" ]
+  if color = red   [ set my-phenotype "red" ]
+  if my-phenotype = "" [ stop ]
+
+  ;; -------------------------------------------------------------------------
+  ;; Parenting game (asexual "same:same" only for now)
+  ;; Parent pays the cost in the box; offspring energy is set to that box value.
+  ;; Globals expected:
+  ;; grn:grn, blu:blu, red:red
+  ;; -------------------------------------------------------------------------
+  let parenting-value 0
+  if my-phenotype = "grn" [ set parenting-value grn:grn ]
+  if my-phenotype = "blu" [ set parenting-value blu:blu ]
+  if my-phenotype = "red" [ set parenting-value red:red ]
+
+  ;; parent must be able to pay the absolute value of the cost
+  if energy >= ( 1 * ( abs parenting-value )) [
+    
+    ;; pay cost and create offspring whose energy is set to the parenting value
+    set energy energy - parenting-value
+    
+    hatch 1 [
+      set energy parenting-value
+      set playing? false
+      move-to one-of patches
+      set generation generation + 1
+    ]
+  ]
+end
+
+
+
+
+to update-turtles
+  if ( energy <= 0 ) [ die ]
+  set playing? false
+end
+
+
+
+; to grim-reaper
+;   let num-turtles count turtles
+;   if num-turtles <= carrying-capacity [ stop ]
+
+;   let chance-to-die (num-turtles - carrying-capacity) / num-turtles
+;   ask turtles [
+;     if random-float 1.0 < chance-to-die [ die ]
+;   ]
+; end
+
+; ------------------------------------------------------------------------------------------------------------------- ;
+;
+; CALLER UPDATES HEADING WITH RESPECT TO TARGET
+;
+; This subroutine calculates a new heading for the caller with respect to the target. First, the position
+; difference between the caller and target are calculated along the x and y axes. If this difference is
+; non-zero, then a magnitude of difference if calculated based on the cost and the angle between the
+; target and the caller. Finally, these magnitudes are used to determine the new heading.
+;
+; ENTRY: target
+;
+;        cost
+;
+;        Positions of the caller and target
+;
+; EXIT:  Caller magnitude preferrences and heading are updated
+;
+; ------------------------------------------------------------------------------------------------------------------- ;
+
+to move-toward [ target cost ]
+;   complete-action target "move-toward" cost                    ; Record that this action has started.
+
+;   if (target != nobody ) [
+
+;     let ycor-difference ( ( ifelse-value                       ; Determine the distance from caller to
+;       ( is-patch? target )                                     ; target along cardinal directions.
+;       [ [pycor] of target ]
+;       [ [ycor] of target ] ) - [ycor] of self )
+;     let xcor-difference ( ( ifelse-value
+;       ( is-patch? target )
+;       [ [pxcor] of target ]
+;       [ [xcor] of target ] ) - [xcor] of self )
+
+;     if ( ycor-difference > maximum-visual-range and            ; Check if the anima1 is looking at target
+;       ycor-difference > 0 )                                    ; across one of the edges of the world
+;     [ set ycor-difference ycor-difference - 100 ]              ; so that the angles are calculated correctly.
+;     if ( xcor-difference > maximum-visual-range and
+;       xcor-difference > 0 )
+;     [ set xcor-difference xcor-difference - 100 ]
+;     if ( abs ycor-difference > maximum-visual-range and
+;       ycor-difference < 0 )
+;     [ set ycor-difference ycor-difference + 100 ]
+;     if ( abs xcor-difference > maximum-visual-range and
+;       xcor-difference < 0 )
+;     [ set xcor-difference xcor-difference + 100 ]
+
+;     if ( not ( ycor-difference = 0 and                         ; Make sure target isn't in
+;       xcor-difference = 0 ) ) [                                ; the exact same location as self.
+
+;       let angle atan xcor-difference ycor-difference           ; Calculate angle to the target.
+;       if ( cost < 0 ) [ set angle angle - 180 ]
+
+;       set x.magnitude x.magnitude + (abs cost * sin angle)     ; Set direction magnitudes based on energy cost.
+;       set y.magnitude y.magnitude + (abs cost * cos angle) ]
+
+;     set heading ifelse-value                                   ; Set current heading based on magnitudes.
+;     ( x.magnitude = 0 and y.magnitude = 0 )
+;     [ heading ]
+;     [ ( atan x.magnitude y.magnitude ) ]
+;   ]
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+; =================================================================================================================================================== ;
+;
+;        dP            dP            
+;        88            88            
+;  .d888b88 .d8888b. d8888P .d8888b. 
+;  88'  `88 88'  `88   88   88'  `88 
+;  88.  .88 88.  .88   88   88.  .88 
+;  `88888P8 `88888P8   dP   `88888P8 
+;                                                                   
+; =================================================================================================================================================== ;
+
+
+; ====================================================================================================================================================
+; TURTLES                                    
+; ====================================================================================================================================================
+; ----------------------------------------------------------------------------------------------------------------------------------------------------
+; IMPORT TURTLES FROM CSV
+; ----------------------------------------------------------------------------------------------------------------------------------------------------
+
+to import-turtles-from-csv
+  set code-location "import-turtles-from-csv"
+
+  let file-to-import get-import-file-path
+  
+  ; If file not found, exit early
+  if file-to-import = "" [ set population-name "" stop ] 
+
+  let data-from-file csv:from-file file-to-import
+  let header-block first data-from-file
+  let data-block but-first data-from-file
+
+  create-turtles-from-data header-block data-block
+  
+  log-import-success
+end
+
+; --------------------------------------------------------------------------------------------------------- ;
+; --- GET IMPORT FILE PATH
+; --------------------------------------------------------------------------------------------------------- ;
+
+to-report get-import-file-path
+;   set code-location "get-import-file-path"
+
+;   let primary (word path-to-experiment system ".csv")
+;   let fallback (word "../data/" system ".csv")
+
+;   if file-exists? primary [ report primary ]
+;   if file-exists? fallback [ report fallback ]
+   report ""  ; File not found
+end
+
+; --------------------------------------------------------------------------------------------------------- ;
+; --- CREATE TURTLES FROM DATA
+; --------------------------------------------------------------------------------------------------------- ;
+
+to create-turtles-from-data [ header-block data-block ]
+;   set code-location "create-turtles-from-data"
+
+;   let i 0
+
+;   foreach data-block [ row ->
+;     create-turtles 1 [
+;       let j 0
+;       foreach header-block [ header ->
+;         let value item j item i data-block
+;         set-turtle-state-variable header value
+;         set j j + 1
+;       ]
+;       set reference.index -1 ; empirical turtles have reference.index -1
+;       set i i + 1
+;     ]
+;   ]
+end
+
+; --------------------------------------------------------------------------------------------------------- ;
+; --- SET TURTLE STATE VARIABLE
+; --------------------------------------------------------------------------------------------------------- ;
+
+to set-turtle-state-variable [ header value ]
+;   set code-location "set-turtle-state-variable"
+
+;   ; ------------------------------------------------------------
+;   ; Fields shared by all turtles, regardless of breed
+;   ; ------------------------------------------------------------
+  
+;   (ifelse
+;     (header = "breed")           [ set breed run-result value ]
+;     (header = "hidden?")         [ set hidden? (ifelse-value (is-boolean? value) [value] [true]) ]
+;     (header = "xcor")            [ set xcor (ifelse-value (is-string? value) [0] [value]) ]
+;     (header = "ycor")            [ set ycor (ifelse-value (is-string? value) [0] [value]) ]
+;     (header = "label")           [ set label value ]
+;     (header = "label-color")     [ set label-color (ifelse-value (is-number? value) [value] [0]) ]
+;     (header = "size")            [ set size (ifelse-value (is-string? value) [1] [value]) ]
+;     (header = "shape")           [ if (value != "" and value != 0) [ set shape value ] ]
+;     (header = "color")           [ set color value ]
+;     [ ])
+  
+;   ; ------------------------------------------------------------
+;   ; General turtle state
+;   ; ------------------------------------------------------------
+  
+;   (ifelse
+;     (header = "reference.id")        [ set reference.id (word value) ]
+;     (header = "time.point") [
+;       set time.point (ifelse-value (is-number? value and value >= 0) [value] ["unknown"])
+;       set hidden? (value != -1)]
+;     (header = "replicate.label" or header = "replicate.number" or header = "sample.label")    [ set sample.label (word value) ]
+;     (header = "interactions.list")   [ set interactions.list (ifelse-value (value != "" and is-string? value) [read-from-string value] [ [] ]) ]
+;     (header = "constraints.list")    [ set constraints.list (ifelse-value (value != "" and is-string? value) [read-from-string value] [ [] ]) ]
+;     (header = "my.treatments")       [ set my.treatments (ifelse-value (value != "" and is-string? value) [ read-from-string value ] [ [] ]) ]
+;     (header = "measured.state")      [ set measured.state value ]
+;     (header = "data.group")          [ set data.group value ]
+;     [ ])
+
+;   ; ------------------------------------------------------------
+;   ; Calibrator-only fields
+;   ; ------------------------------------------------------------
+  
+;   if is-calibrator? self [
+;     if (header = "iteration.number") [ set iteration.number value ]]
+  
+;   ; ------------------------------------------------------------
+;   ; Outreacher-only fields
+;   ; ------------------------------------------------------------
+  
+;   if is-outreacher? self [
+;     (ifelse
+;       (header = "slide.number")       [ set slide.number value ]
+;       (header = "is.current.slide")   [ set is.current.slide value ]
+;       (header = "slide.type")         [ set slide.type value ]
+;       (header = "slide.file")         [ set slide.file value ]
+;       (header = "correct.choices")    [ set correct.choices (ifelse-value (value != "" and is-string? value) [read-from-string value] [ [] ]) ]
+;       (header = "countdown.max")      [ set countdown.max value ]
+;       (header = "correct.slide")      [ set correct.slide value ]
+;       (header = "incorrect.slide")    [ set incorrect.slide value ]
+;       [ ])]
+
+end
+
+
+
+
+; --------------------------------------------------------------------------------------------------------- ;
+; --- LOG IMPORT SUCCESS
+; --------------------------------------------------------------------------------------------------------- ;
+
+to log-import-success
+;   set code-location "log-import-success"
+
+;   update-metafile "import" system (word "Imported cell data for system: " system)
+;   ifelse behaviorspace-run-number > 0 [
+;     output-print (word "  Run " run-id ": import complete. BehaviorSpace run #" behaviorspace-run-number )
+;   ][
+;     output-print (word "  Run " run-id ": import complete for system '" system "'")
+;   ]
+end
+
+
+
+
+; ---------------------------------------------------------------------------------------------------------------------------------------------------- 
+; STORE AGENT INFORMATION INTO A FILE
+; ----------------------------------------------------------------------------------------------------------------------------------------------------
+
+to save-turtles-to-csv
+  set code-location "save-turtles-to-csv"
+
+  let filepath (word "../data/" population-name ".csv")
+  
+  let body []
+  let header []
+  
+  if ( file-exists? filepath ) [ file-close file-delete filepath ]
+  
+  ; list of turtle state variables to save
+  set header ( list
+    "breed"
+    "shape"
+    "color.allele.i"
+    "color.allele.ii"
+    "biological.sex"
+    "energy.supply"
+  )
+
+  ask turtles [
+    
+    let data-list []
+    
+    foreach header [ text ->
+      
+      let value (ifelse-value
+        ( text = "breed" ) [ breed ]
+        ( text = "shape" ) [ shape ]
+        ( text = "color.allele.i" ) [ color.allele.i ]
+        ( text = "color.allele.ii" ) [ color.allele.ii ]
+        ( text = "biological.sex" ) [ biological.sex ]
+        ( text = "energy.supply" ) [ energy.supply ]
+
+        [ 0 ] 
+      )
+      
+      set data-list lput value data-list ]
+    
+    set body lput data-list body
+    
+  ]
+  
+  file-open filepath
+  csv:to-file filepath ( sentence (list header ) body )
+  file-close
+  ;update-metafile "system" system (word "SYSTEM SAVED " system )
+ 
+end
+
+]]></code>
+  <widgets>
+    <view x="20" wrappingAllowedX="true" y="95" frameRate="30.0" minPycor="0" height="689" showTickCounter="true" patchSize="6.85" fontSize="10" wrappingAllowedY="true" width="689" tickCounterLabel="timesteps" maxPycor="99" updateMode="0" maxPxcor="99" minPxcor="0"></view>
+    <button x="20" y="15" height="65" disableUntilTicks="false" forever="false" kind="Observer" width="75">setup</button>
+    <button x="630" y="15" height="65" disableUntilTicks="false" forever="false" kind="Observer" width="80" display="go once">go</button>
+    <button x="100" y="15" height="65" disableUntilTicks="false" forever="false" kind="Observer" width="105" display="clear poulation">clear-turtles
+clear-all</button>
+    <chooser x="210" y="15" height="65" variable="population-to-load" current="0" width="140" display="population-to-load">
+      <choice type="string" value="basic"></choice>
+      <choice type="string" value="other"></choice>
+    </chooser>
+    <input x="355" multiline="false" y="15" height="65" variable="population-name" type="string" width="190">fgddfgdg</input>
+    <button x="570" y="110" height="65" disableUntilTicks="false" forever="false" kind="Observer" width="125" display="save population">save-turtles-to-csv</button>
+    <note x="730" y="70" backgroundDark="0" fontSize="14" width="225" markdown="false" height="51" textColorDark="-1" textColorLight="-16777216" backgroundLight="16777215">_________________________________
+INTERACTION GAME
+</note>
+    <slider x="845" step="1" y="655" max="100" width="355" display="individuals-to-add" height="60" min="0" direction="Horizontal" default="100.0" variable="individuals-to-add"></slider>
+    <chooser x="730" y="725" height="60" variable="sex-of-individuals" current="2" width="145" display="sex-of-individuals">
+      <choice type="string" value="male"></choice>
+      <choice type="string" value="female"></choice>
+      <choice type="string" value="asexual"></choice>
+    </chooser>
+    <chooser x="880" y="725" height="60" variable="color-of-individuals" current="2" width="145" display="color-of-individuals">
+      <choice type="string" value="green"></choice>
+      <choice type="string" value="blue"></choice>
+      <choice type="string" value="red"></choice>
+    </chooser>
+    <slider x="1030" step="0.01" y="725" max="1" width="170" display="size-of-individuals" height="60" min="0" direction="Horizontal" default="1.0" variable="size-of-individuals"></slider>
+    <button x="730" y="655" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="110" display="add population">add-population</button>
+    <input x="1135" multiline="false" y="560" height="65" variable="red:red" type="number" width="65" sizeVersion="0">1.0</input>
+    <input x="1135" multiline="false" y="275" height="65" variable="red.red" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="985" multiline="false" y="200" height="65" variable="grn.blu" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="985" multiline="false" y="275" height="65" variable="grn.red" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="985" multiline="false" y="125" height="65" variable="grn.grn" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="1060" multiline="false" y="125" height="65" variable="blu.grn" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="1060" multiline="false" y="200" height="65" variable="blu.blu" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="1060" multiline="false" y="275" height="65" variable="blu.red" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="1135" multiline="false" y="125" height="65" variable="red.grn" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="1135" multiline="false" y="200" height="65" variable="red.blu" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="880" multiline="false" y="275" height="65" variable="red-red" type="number" width="65" sizeVersion="0">-2.0</input>
+    <input x="880" multiline="false" y="200" height="65" variable="red-blu" type="number" width="65" sizeVersion="0">2.0</input>
+    <input x="880" multiline="false" y="125" height="65" variable="red-grn" type="number" width="65" sizeVersion="0">2.0</input>
+    <input x="805" multiline="false" y="275" height="65" variable="blu-red" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="805" multiline="false" y="200" height="65" variable="blu-blu" type="number" width="65" sizeVersion="0">1.0</input>
+    <input x="805" multiline="false" y="125" height="65" variable="blu-grn" type="number" width="65" sizeVersion="0">3.0</input>
+    <input x="730" multiline="false" y="125" height="65" variable="grn-grn" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="730" multiline="false" y="275" height="65" variable="grn-red" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="730" multiline="false" y="200" height="65" variable="grn-blu" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="880" multiline="false" y="560" height="65" variable="red'red" type="number" width="65" sizeVersion="0">1.0</input>
+    <note x="725" y="355" backgroundDark="0" fontSize="14" width="225" markdown="false" height="51" textColorDark="-1" textColorLight="-16777216" backgroundLight="16777215">__________________________________
+                  REPRODUCTION GAME 
+</note>
+    <input x="730" multiline="false" y="485" height="65" variable="grn'blu" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="730" multiline="false" y="560" height="65" variable="grn'red" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="730" multiline="false" y="410" height="65" variable="grn'grn" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="805" multiline="false" y="410" height="65" variable="blu'grn" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="805" multiline="false" y="485" height="65" variable="blu'blu" type="number" width="65" sizeVersion="0">1.0</input>
+    <input x="805" multiline="false" y="560" height="65" variable="blu'red" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="880" multiline="false" y="410" height="65" variable="red'grn" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="880" multiline="false" y="485" height="65" variable="red'blu" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="985" multiline="false" y="485" height="65" variable="grn:blu" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="985" multiline="false" y="560" height="65" variable="grn:red" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="985" multiline="false" y="410" height="65" variable="grn:grn" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="1060" multiline="false" y="410" height="65" variable="blu:grn" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="1060" multiline="false" y="485" height="65" variable="blu:blu" type="number" width="65" sizeVersion="0">1.0</input>
+    <input x="1060" multiline="false" y="560" height="65" variable="blu:red" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="1135" multiline="false" y="410" height="65" variable="red:grn" type="number" width="65" sizeVersion="0">0.0</input>
+    <input x="1135" multiline="false" y="485" height="65" variable="red:blu" type="number" width="65" sizeVersion="0">0.0</input>
+    <note x="985" y="355" backgroundDark="0" fontSize="14" width="225" markdown="false" height="51" textColorDark="-1" textColorLight="-16777216" backgroundLight="16777215">_________________________________
+PARENTING GAME</note>
+    <note x="985" y="70" backgroundDark="0" fontSize="14" width="220" markdown="false" height="51" textColorDark="-1" textColorLight="-16777216" backgroundLight="16777215">_________________________________
+TOLERANCE GAME</note>
+    <plot x="1225" autoPlotX="true" yMax="10.0" autoPlotY="true" yAxis="population" y="15" xMin="0.0" height="325" legend="false" xMax="10.0" yMin="0.0" width="300" xAxis="ticks" display="phenotypes over time">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="red" color="-5298144" legend="true">
+        <setup></setup>
+        <update>plot count turtles with [ color = red ]</update>
+      </pen>
+      <pen interval="1.0" mode="0" display="blue" color="-13345367" legend="true">
+        <setup></setup>
+        <update>plot count turtles with [ color = blue ]</update>
+      </pen>
+    </plot>
+    <monitor x="1235" precision="17" y="380" height="60" fontSize="11" width="100" display="red">count turtles with [ color = red ]</monitor>
+    <monitor x="1355" precision="17" y="380" height="60" fontSize="11" width="100" display="blue">count turtles with [ color = blue ]</monitor>
+    <plot x="1230" autoPlotX="true" yMax="1.0" autoPlotY="true" y="460" xMin="0.0" height="300" legend="false" xMax="10.0" yMin="0.0" width="290" display="red-to-blue ratio">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="default" color="-16777216" legend="true">
+        <setup></setup>
+        <update>if ( any? turtles ) [ plot count turtles with [ color = red ] / ( count turtles with [ color = red ] + count turtles with [ color = blue ] )]</update>
+      </pen>
+    </plot>
+    <button x="550" y="15" height="65" disableUntilTicks="false" forever="true" kind="Observer" width="75">go</button>
+    <plot x="1535" autoPlotX="true" yMax="10.0" autoPlotY="true" y="15" xMin="0.0" height="325" legend="false" xMax="10.0" yMin="0.0" width="275" display="generations">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="blue" color="-13345367" legend="true">
+        <setup></setup>
+        <update>ifelse (any? turtles with [ color = blue ] ) [ plot mean [generation] of turtles with [ color = blue ]] [ plot 0 ]</update>
+      </pen>
+      <pen interval="1.0" mode="0" display="red" color="-2674135" legend="true">
+        <setup></setup>
+        <update>ifelse (any? turtles with [ color = red ] ) [ plot mean [generation] of turtles with [ color = red ]] [ plot 0 ]</update>
+      </pen>
+    </plot>
+    <plot x="1555" autoPlotX="true" yMax="1.0" autoPlotY="true" y="420" xMin="0.0" height="325" legend="false" xMax="10.0" yMin="0.0" width="280" display="payoffs">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="default" color="-13345367" legend="true">
+        <setup></setup>
+        <update>ifelse (any? turtles with [ color = blue ] ) [ plot mean [energy] of turtles with [ color = blue ]] [ plot 0 ]</update>
+      </pen>
+      <pen interval="1.0" mode="0" display="pen-1" color="-2674135" legend="true">
+        <setup></setup>
+        <update>ifelse (any? turtles with [ color = red ] ) [ plot mean [energy] of turtles with [ color = red ]] [ plot 0 ]</update>
+      </pen>
+    </plot>
+  </widgets>
+  <info>## WHAT IS IT?
+
+(a general understanding of what the model is trying to show or explain)
+
+## HOW IT WORKS
+
+(what rules the agents use to create the overall behavior of the model)
+
+## HOW TO USE IT
+
+(how to use the model, including a description of each of the items in the Interface tab)
+
+## THINGS TO NOTICE
+
+(suggested things for the user to notice while running the model)
+
+## THINGS TO TRY
+
+(suggested things for the user to try to do (move sliders, switches, etc.) with the model)
+
+## EXTENDING THE MODEL
+
+(suggested things to add or change in the Code tab to make the model more complicated, detailed, accurate, etc.)
+
+## NETLOGO FEATURES
+
+(interesting or unusual features of NetLogo that the model uses, particularly in the Code tab; or where workarounds were needed for missing features)
+
+## RELATED MODELS
+
+(models in the NetLogo Models Library and elsewhere which are of related interest)
+
+## CREDITS AND REFERENCES
+
+(a reference to the model's URL on the web if it has one, as well as any other necessary credits, citations, and links)
+</info>
+  <turtleShapes>
+    <shape name="default" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="5"></point>
+        <point x="40" y="250"></point>
+        <point x="150" y="205"></point>
+        <point x="260" y="250"></point>
+      </polygon>
+    </shape>
+    <shape name="ant" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="136" y="61"></point>
+        <point x="129" y="46"></point>
+        <point x="144" y="30"></point>
+        <point x="119" y="45"></point>
+        <point x="124" y="60"></point>
+        <point x="114" y="82"></point>
+        <point x="97" y="37"></point>
+        <point x="132" y="10"></point>
+        <point x="93" y="36"></point>
+        <point x="111" y="84"></point>
+        <point x="127" y="105"></point>
+        <point x="172" y="105"></point>
+        <point x="189" y="84"></point>
+        <point x="208" y="35"></point>
+        <point x="171" y="11"></point>
+        <point x="202" y="35"></point>
+        <point x="204" y="37"></point>
+        <point x="186" y="82"></point>
+        <point x="177" y="60"></point>
+        <point x="180" y="44"></point>
+        <point x="159" y="32"></point>
+        <point x="170" y="44"></point>
+        <point x="165" y="60"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="95"></point>
+        <point x="135" y="103"></point>
+        <point x="139" y="117"></point>
+        <point x="125" y="149"></point>
+        <point x="137" y="180"></point>
+        <point x="135" y="196"></point>
+        <point x="150" y="204"></point>
+        <point x="166" y="195"></point>
+        <point x="161" y="180"></point>
+        <point x="174" y="150"></point>
+        <point x="158" y="116"></point>
+        <point x="164" y="102"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="149" y="186"></point>
+        <point x="128" y="197"></point>
+        <point x="114" y="232"></point>
+        <point x="134" y="270"></point>
+        <point x="149" y="282"></point>
+        <point x="166" y="270"></point>
+        <point x="185" y="232"></point>
+        <point x="171" y="195"></point>
+        <point x="149" y="186"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="225" y="66"></point>
+        <point x="230" y="107"></point>
+        <point x="159" y="122"></point>
+        <point x="161" y="127"></point>
+        <point x="234" y="111"></point>
+        <point x="236" y="106"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="78" y="58"></point>
+        <point x="99" y="116"></point>
+        <point x="139" y="123"></point>
+        <point x="137" y="128"></point>
+        <point x="95" y="119"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="48" y="103"></point>
+        <point x="90" y="147"></point>
+        <point x="129" y="147"></point>
+        <point x="130" y="151"></point>
+        <point x="86" y="151"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="65" y="224"></point>
+        <point x="92" y="171"></point>
+        <point x="134" y="160"></point>
+        <point x="135" y="164"></point>
+        <point x="95" y="175"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="235" y="222"></point>
+        <point x="210" y="170"></point>
+        <point x="163" y="162"></point>
+        <point x="161" y="166"></point>
+        <point x="208" y="174"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="249" y="107"></point>
+        <point x="211" y="147"></point>
+        <point x="168" y="147"></point>
+        <point x="168" y="150"></point>
+        <point x="213" y="150"></point>
+      </polygon>
+    </shape>
+    <shape name="bug" rotatable="true" editableColorIndex="0">
+      <circle x="96" y="182" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="110" y="127" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <circle x="110" y="75" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <line endX="80" startY="100" marked="true" color="-1920102913" endY="30" startX="150"></line>
+      <line endX="220" startY="100" marked="true" color="-1920102913" endY="30" startX="150"></line>
+    </shape>
+    <shape name="butterfly" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="165"></point>
+        <point x="209" y="199"></point>
+        <point x="225" y="225"></point>
+        <point x="225" y="255"></point>
+        <point x="195" y="270"></point>
+        <point x="165" y="255"></point>
+        <point x="150" y="240"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="165"></point>
+        <point x="89" y="198"></point>
+        <point x="75" y="225"></point>
+        <point x="75" y="255"></point>
+        <point x="105" y="270"></point>
+        <point x="135" y="255"></point>
+        <point x="150" y="240"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="139" y="148"></point>
+        <point x="100" y="105"></point>
+        <point x="55" y="90"></point>
+        <point x="25" y="90"></point>
+        <point x="10" y="105"></point>
+        <point x="10" y="135"></point>
+        <point x="25" y="180"></point>
+        <point x="40" y="195"></point>
+        <point x="85" y="194"></point>
+        <point x="139" y="163"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="162" y="150"></point>
+        <point x="200" y="105"></point>
+        <point x="245" y="90"></point>
+        <point x="275" y="90"></point>
+        <point x="290" y="105"></point>
+        <point x="290" y="135"></point>
+        <point x="275" y="180"></point>
+        <point x="260" y="195"></point>
+        <point x="215" y="195"></point>
+        <point x="162" y="165"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="255"></point>
+        <point x="135" y="225"></point>
+        <point x="120" y="150"></point>
+        <point x="135" y="120"></point>
+        <point x="150" y="105"></point>
+        <point x="165" y="120"></point>
+        <point x="180" y="150"></point>
+        <point x="165" y="225"></point>
+      </polygon>
+      <circle x="135" y="90" marked="false" color="255" diameter="30" filled="true"></circle>
+      <line endX="195" startY="105" marked="false" color="255" endY="60" startX="150"></line>
+      <line endX="105" startY="105" marked="false" color="255" endY="60" startX="150"></line>
+    </shape>
+    <shape name="fish" rotatable="true" editableColorIndex="0">
+      <polygon color="-1" filled="true" marked="false">
+        <point x="44" y="131"></point>
+        <point x="21" y="87"></point>
+        <point x="15" y="86"></point>
+        <point x="0" y="120"></point>
+        <point x="15" y="150"></point>
+        <point x="0" y="180"></point>
+        <point x="13" y="214"></point>
+        <point x="20" y="212"></point>
+        <point x="45" y="166"></point>
+      </polygon>
+      <polygon color="-1" filled="true" marked="false">
+        <point x="135" y="195"></point>
+        <point x="119" y="235"></point>
+        <point x="95" y="218"></point>
+        <point x="76" y="210"></point>
+        <point x="46" y="204"></point>
+        <point x="60" y="165"></point>
+      </polygon>
+      <polygon color="-1" filled="true" marked="false">
+        <point x="75" y="45"></point>
+        <point x="83" y="77"></point>
+        <point x="71" y="103"></point>
+        <point x="86" y="114"></point>
+        <point x="166" y="78"></point>
+        <point x="135" y="60"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="30" y="136"></point>
+        <point x="151" y="77"></point>
+        <point x="226" y="81"></point>
+        <point x="280" y="119"></point>
+        <point x="292" y="146"></point>
+        <point x="292" y="160"></point>
+        <point x="287" y="170"></point>
+        <point x="270" y="195"></point>
+        <point x="195" y="210"></point>
+        <point x="151" y="212"></point>
+        <point x="30" y="166"></point>
+      </polygon>
+      <circle x="215" y="106" marked="false" color="255" diameter="30" filled="true"></circle>
+    </shape>
+    <shape name="frog" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="146" y="18"></point>
+        <point x="135" y="30"></point>
+        <point x="119" y="42"></point>
+        <point x="105" y="90"></point>
+        <point x="90" y="150"></point>
+        <point x="105" y="195"></point>
+        <point x="135" y="225"></point>
+        <point x="165" y="225"></point>
+        <point x="195" y="195"></point>
+        <point x="210" y="150"></point>
+        <point x="195" y="90"></point>
+        <point x="180" y="41"></point>
+        <point x="165" y="30"></point>
+        <point x="155" y="18"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="91" y="176"></point>
+        <point x="67" y="148"></point>
+        <point x="70" y="121"></point>
+        <point x="66" y="119"></point>
+        <point x="61" y="133"></point>
+        <point x="59" y="111"></point>
+        <point x="53" y="111"></point>
+        <point x="52" y="131"></point>
+        <point x="47" y="115"></point>
+        <point x="42" y="120"></point>
+        <point x="46" y="146"></point>
+        <point x="55" y="187"></point>
+        <point x="80" y="237"></point>
+        <point x="106" y="269"></point>
+        <point x="116" y="268"></point>
+        <point x="114" y="214"></point>
+        <point x="131" y="222"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="185" y="62"></point>
+        <point x="234" y="84"></point>
+        <point x="223" y="51"></point>
+        <point x="226" y="48"></point>
+        <point x="234" y="61"></point>
+        <point x="235" y="38"></point>
+        <point x="240" y="38"></point>
+        <point x="243" y="60"></point>
+        <point x="252" y="46"></point>
+        <point x="255" y="49"></point>
+        <point x="244" y="95"></point>
+        <point x="188" y="92"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="115" y="62"></point>
+        <point x="66" y="84"></point>
+        <point x="77" y="51"></point>
+        <point x="74" y="48"></point>
+        <point x="66" y="61"></point>
+        <point x="65" y="38"></point>
+        <point x="60" y="38"></point>
+        <point x="57" y="60"></point>
+        <point x="48" y="46"></point>
+        <point x="45" y="49"></point>
+        <point x="56" y="95"></point>
+        <point x="112" y="92"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="200" y="186"></point>
+        <point x="233" y="148"></point>
+        <point x="230" y="121"></point>
+        <point x="234" y="119"></point>
+        <point x="239" y="133"></point>
+        <point x="241" y="111"></point>
+        <point x="247" y="111"></point>
+        <point x="248" y="131"></point>
+        <point x="253" y="115"></point>
+        <point x="258" y="120"></point>
+        <point x="254" y="146"></point>
+        <point x="245" y="187"></point>
+        <point x="220" y="237"></point>
+        <point x="194" y="269"></point>
+        <point x="184" y="268"></point>
+        <point x="186" y="214"></point>
+        <point x="169" y="222"></point>
+      </polygon>
+      <circle x="157" y="38" marked="false" color="255" diameter="18" filled="true"></circle>
+      <circle x="125" y="38" marked="false" color="255" diameter="18" filled="true"></circle>
+    </shape>
+    <shape name="hawk" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="151" y="170"></point>
+        <point x="136" y="170"></point>
+        <point x="123" y="229"></point>
+        <point x="143" y="244"></point>
+        <point x="156" y="244"></point>
+        <point x="179" y="229"></point>
+        <point x="166" y="170"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="152" y="154"></point>
+        <point x="137" y="154"></point>
+        <point x="125" y="213"></point>
+        <point x="140" y="229"></point>
+        <point x="159" y="229"></point>
+        <point x="179" y="214"></point>
+        <point x="167" y="154"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="151" y="140"></point>
+        <point x="136" y="140"></point>
+        <point x="126" y="202"></point>
+        <point x="139" y="214"></point>
+        <point x="159" y="214"></point>
+        <point x="176" y="200"></point>
+        <point x="166" y="140"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="151" y="125"></point>
+        <point x="134" y="124"></point>
+        <point x="128" y="188"></point>
+        <point x="140" y="198"></point>
+        <point x="161" y="197"></point>
+        <point x="174" y="188"></point>
+        <point x="166" y="125"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="152" y="86"></point>
+        <point x="227" y="72"></point>
+        <point x="286" y="97"></point>
+        <point x="272" y="101"></point>
+        <point x="294" y="117"></point>
+        <point x="276" y="118"></point>
+        <point x="287" y="131"></point>
+        <point x="270" y="131"></point>
+        <point x="278" y="141"></point>
+        <point x="264" y="138"></point>
+        <point x="267" y="145"></point>
+        <point x="228" y="150"></point>
+        <point x="153" y="147"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="160" y="74"></point>
+        <point x="159" y="61"></point>
+        <point x="149" y="54"></point>
+        <point x="130" y="53"></point>
+        <point x="139" y="62"></point>
+        <point x="133" y="81"></point>
+        <point x="127" y="113"></point>
+        <point x="129" y="149"></point>
+        <point x="134" y="177"></point>
+        <point x="150" y="206"></point>
+        <point x="168" y="179"></point>
+        <point x="172" y="147"></point>
+        <point x="169" y="111"></point>
+      </polygon>
+      <circle x="144" y="55" marked="false" color="255" diameter="7" filled="true"></circle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="129" y="53"></point>
+        <point x="135" y="58"></point>
+        <point x="139" y="54"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="148" y="86"></point>
+        <point x="73" y="72"></point>
+        <point x="14" y="97"></point>
+        <point x="28" y="101"></point>
+        <point x="6" y="117"></point>
+        <point x="24" y="118"></point>
+        <point x="13" y="131"></point>
+        <point x="30" y="131"></point>
+        <point x="22" y="141"></point>
+        <point x="36" y="138"></point>
+        <point x="33" y="145"></point>
+        <point x="72" y="150"></point>
+        <point x="147" y="147"></point>
+      </polygon>
+    </shape>
+    <shape name="mouse" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="144" y="238"></point>
+        <point x="153" y="255"></point>
+        <point x="168" y="260"></point>
+        <point x="196" y="257"></point>
+        <point x="214" y="241"></point>
+        <point x="237" y="234"></point>
+        <point x="248" y="243"></point>
+        <point x="237" y="260"></point>
+        <point x="199" y="278"></point>
+        <point x="154" y="282"></point>
+        <point x="133" y="276"></point>
+        <point x="109" y="270"></point>
+        <point x="90" y="273"></point>
+        <point x="83" y="283"></point>
+        <point x="98" y="279"></point>
+        <point x="120" y="282"></point>
+        <point x="156" y="293"></point>
+        <point x="200" y="287"></point>
+        <point x="235" y="273"></point>
+        <point x="256" y="254"></point>
+        <point x="261" y="238"></point>
+        <point x="252" y="226"></point>
+        <point x="232" y="221"></point>
+        <point x="211" y="228"></point>
+        <point x="194" y="238"></point>
+        <point x="183" y="246"></point>
+        <point x="168" y="246"></point>
+        <point x="163" y="232"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="120" y="78"></point>
+        <point x="116" y="62"></point>
+        <point x="127" y="35"></point>
+        <point x="139" y="16"></point>
+        <point x="150" y="4"></point>
+        <point x="160" y="16"></point>
+        <point x="173" y="33"></point>
+        <point x="183" y="60"></point>
+        <point x="180" y="80"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="119" y="75"></point>
+        <point x="179" y="75"></point>
+        <point x="195" y="105"></point>
+        <point x="190" y="166"></point>
+        <point x="193" y="215"></point>
+        <point x="165" y="240"></point>
+        <point x="135" y="240"></point>
+        <point x="106" y="213"></point>
+        <point x="110" y="165"></point>
+        <point x="105" y="105"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="167" y="69"></point>
+        <point x="184" y="68"></point>
+        <point x="193" y="64"></point>
+        <point x="199" y="65"></point>
+        <point x="202" y="74"></point>
+        <point x="194" y="82"></point>
+        <point x="185" y="79"></point>
+        <point x="171" y="80"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="133" y="69"></point>
+        <point x="116" y="68"></point>
+        <point x="107" y="64"></point>
+        <point x="101" y="65"></point>
+        <point x="98" y="74"></point>
+        <point x="106" y="82"></point>
+        <point x="115" y="79"></point>
+        <point x="129" y="80"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="163" y="28"></point>
+        <point x="171" y="32"></point>
+        <point x="173" y="40"></point>
+        <point x="169" y="45"></point>
+        <point x="166" y="47"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="137" y="28"></point>
+        <point x="129" y="32"></point>
+        <point x="127" y="40"></point>
+        <point x="131" y="45"></point>
+        <point x="134" y="47"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="6"></point>
+        <point x="143" y="14"></point>
+        <point x="156" y="14"></point>
+      </polygon>
+      <line endX="195" startY="17" marked="true" color="-1920102913" endY="10" startX="161"></line>
+      <line endX="187" startY="22" marked="true" color="-1920102913" endY="20" startX="160"></line>
+      <line endX="201" startY="22" marked="true" color="-1920102913" endY="31" startX="160"></line>
+      <line endX="99" startY="22" marked="true" color="-1920102913" endY="31" startX="140"></line>
+      <line endX="113" startY="22" marked="true" color="-1920102913" endY="20" startX="140"></line>
+      <line endX="105" startY="17" marked="true" color="-1920102913" endY="10" startX="139"></line>
+    </shape>
+    <shape name="pine" rotatable="false" editableColorIndex="0">
+      <rectangle endX="180" startY="225" marked="false" color="-1653716737" endY="300" startX="120" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="240"></point>
+        <point x="240" y="270"></point>
+        <point x="150" y="135"></point>
+        <point x="60" y="270"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="75"></point>
+        <point x="75" y="210"></point>
+        <point x="150" y="195"></point>
+        <point x="225" y="210"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="7"></point>
+        <point x="90" y="157"></point>
+        <point x="150" y="142"></point>
+        <point x="210" y="157"></point>
+        <point x="150" y="7"></point>
+      </polygon>
+    </shape>
+    <shape name="plant" rotatable="false" editableColorIndex="0">
+      <rectangle endX="165" startY="90" marked="true" color="-1920102913" endY="300" startX="135" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="255"></point>
+        <point x="90" y="210"></point>
+        <point x="45" y="195"></point>
+        <point x="75" y="255"></point>
+        <point x="135" y="285"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="255"></point>
+        <point x="210" y="210"></point>
+        <point x="255" y="195"></point>
+        <point x="225" y="255"></point>
+        <point x="165" y="285"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="180"></point>
+        <point x="90" y="135"></point>
+        <point x="45" y="120"></point>
+        <point x="75" y="180"></point>
+        <point x="135" y="210"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="180"></point>
+        <point x="165" y="210"></point>
+        <point x="225" y="180"></point>
+        <point x="255" y="120"></point>
+        <point x="210" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="105"></point>
+        <point x="90" y="60"></point>
+        <point x="45" y="45"></point>
+        <point x="75" y="105"></point>
+        <point x="135" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="105"></point>
+        <point x="165" y="135"></point>
+        <point x="225" y="105"></point>
+        <point x="255" y="45"></point>
+        <point x="210" y="60"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="90"></point>
+        <point x="120" y="45"></point>
+        <point x="150" y="15"></point>
+        <point x="180" y="45"></point>
+        <point x="165" y="90"></point>
+      </polygon>
+    </shape>
+    <shape name="spider" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="134" y="255"></point>
+        <point x="104" y="240"></point>
+        <point x="96" y="210"></point>
+        <point x="98" y="196"></point>
+        <point x="114" y="171"></point>
+        <point x="134" y="150"></point>
+        <point x="119" y="135"></point>
+        <point x="119" y="120"></point>
+        <point x="134" y="105"></point>
+        <point x="164" y="105"></point>
+        <point x="179" y="120"></point>
+        <point x="179" y="135"></point>
+        <point x="164" y="150"></point>
+        <point x="185" y="173"></point>
+        <point x="199" y="195"></point>
+        <point x="203" y="210"></point>
+        <point x="194" y="240"></point>
+        <point x="164" y="255"></point>
+      </polygon>
+      <line endX="170" startY="109" marked="true" color="-1920102913" endY="90" startX="167"></line>
+      <line endX="156" startY="91" marked="true" color="-1920102913" endY="88" startX="170"></line>
+      <line endX="144" startY="91" marked="true" color="-1920102913" endY="88" startX="130"></line>
+      <line endX="130" startY="109" marked="true" color="-1920102913" endY="90" startX="133"></line>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="167" y="117"></point>
+        <point x="207" y="102"></point>
+        <point x="216" y="71"></point>
+        <point x="227" y="27"></point>
+        <point x="227" y="72"></point>
+        <point x="212" y="117"></point>
+        <point x="167" y="132"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="164" y="210"></point>
+        <point x="158" y="194"></point>
+        <point x="195" y="195"></point>
+        <point x="225" y="210"></point>
+        <point x="195" y="285"></point>
+        <point x="240" y="210"></point>
+        <point x="210" y="180"></point>
+        <point x="164" y="180"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="136" y="210"></point>
+        <point x="142" y="194"></point>
+        <point x="105" y="195"></point>
+        <point x="75" y="210"></point>
+        <point x="105" y="285"></point>
+        <point x="60" y="210"></point>
+        <point x="90" y="180"></point>
+        <point x="136" y="180"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="133" y="117"></point>
+        <point x="93" y="102"></point>
+        <point x="84" y="71"></point>
+        <point x="73" y="27"></point>
+        <point x="73" y="72"></point>
+        <point x="88" y="117"></point>
+        <point x="133" y="132"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="163" y="140"></point>
+        <point x="214" y="129"></point>
+        <point x="234" y="114"></point>
+        <point x="255" y="74"></point>
+        <point x="242" y="126"></point>
+        <point x="216" y="143"></point>
+        <point x="164" y="152"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="161" y="183"></point>
+        <point x="203" y="167"></point>
+        <point x="239" y="180"></point>
+        <point x="268" y="239"></point>
+        <point x="249" y="171"></point>
+        <point x="202" y="153"></point>
+        <point x="163" y="162"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="137" y="140"></point>
+        <point x="86" y="129"></point>
+        <point x="66" y="114"></point>
+        <point x="45" y="74"></point>
+        <point x="58" y="126"></point>
+        <point x="84" y="143"></point>
+        <point x="136" y="152"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="139" y="183"></point>
+        <point x="97" y="167"></point>
+        <point x="61" y="180"></point>
+        <point x="32" y="239"></point>
+        <point x="51" y="171"></point>
+        <point x="98" y="153"></point>
+        <point x="137" y="162"></point>
+      </polygon>
+    </shape>
+    <shape name="tree" rotatable="false" editableColorIndex="0">
+      <circle x="118" y="3" marked="true" color="-1920102913" diameter="94" filled="true"></circle>
+      <rectangle endX="180" startY="195" marked="false" color="-1653716737" endY="300" startX="120" filled="true"></rectangle>
+      <circle x="65" y="21" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="116" y="41" marked="true" color="-1920102913" diameter="127" filled="true"></circle>
+      <circle x="45" y="90" marked="true" color="-1920102913" diameter="120" filled="true"></circle>
+      <circle x="104" y="74" marked="true" color="-1920102913" diameter="152" filled="true"></circle>
+    </shape>
+    <shape name="turtle" rotatable="true" editableColorIndex="0">
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="215" y="204"></point>
+        <point x="240" y="233"></point>
+        <point x="246" y="254"></point>
+        <point x="228" y="266"></point>
+        <point x="215" y="252"></point>
+        <point x="193" y="210"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="195" y="90"></point>
+        <point x="225" y="75"></point>
+        <point x="245" y="75"></point>
+        <point x="260" y="89"></point>
+        <point x="269" y="108"></point>
+        <point x="261" y="124"></point>
+        <point x="240" y="105"></point>
+        <point x="225" y="105"></point>
+        <point x="210" y="105"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="105" y="90"></point>
+        <point x="75" y="75"></point>
+        <point x="55" y="75"></point>
+        <point x="40" y="89"></point>
+        <point x="31" y="108"></point>
+        <point x="39" y="124"></point>
+        <point x="60" y="105"></point>
+        <point x="75" y="105"></point>
+        <point x="90" y="105"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="132" y="85"></point>
+        <point x="134" y="64"></point>
+        <point x="107" y="51"></point>
+        <point x="108" y="17"></point>
+        <point x="150" y="2"></point>
+        <point x="192" y="18"></point>
+        <point x="192" y="52"></point>
+        <point x="169" y="65"></point>
+        <point x="172" y="87"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="85" y="204"></point>
+        <point x="60" y="233"></point>
+        <point x="54" y="254"></point>
+        <point x="72" y="266"></point>
+        <point x="85" y="252"></point>
+        <point x="107" y="210"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="119" y="75"></point>
+        <point x="179" y="75"></point>
+        <point x="209" y="101"></point>
+        <point x="224" y="135"></point>
+        <point x="220" y="225"></point>
+        <point x="175" y="261"></point>
+        <point x="128" y="261"></point>
+        <point x="81" y="224"></point>
+        <point x="74" y="135"></point>
+        <point x="88" y="99"></point>
+      </polygon>
+    </shape>
+  </turtleShapes>
+  <linkShapes>
+    <shape name="default" curviness="0.0">
+      <lines>
+        <line x="-0.2" visible="false">
+          <dash value="0.0"></dash>
+          <dash value="1.0"></dash>
+        </line>
+        <line x="0.0" visible="true">
+          <dash value="1.0"></dash>
+          <dash value="0.0"></dash>
+        </line>
+        <line x="0.2" visible="false">
+          <dash value="0.0"></dash>
+          <dash value="1.0"></dash>
+        </line>
+      </lines>
+      <indicator>
+        <shape name="link direction" rotatable="true" editableColorIndex="0">
+          <line endX="90" startY="150" marked="true" color="-1920102913" endY="180" startX="150"></line>
+          <line endX="210" startY="150" marked="true" color="-1920102913" endY="180" startX="150"></line>
+        </shape>
+      </indicator>
+    </shape>
+  </linkShapes>
+  <previewCommands>setup repeat 75 [ go ]</previewCommands>
+</model>
